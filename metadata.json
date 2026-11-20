@@ -1,0 +1,6 @@
+{
+  "name": "AgentLedger",
+  "description": "OpenAI-compatible LLM cost-tracking proxy, agent waste detector, and cost-per-task analytics dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
