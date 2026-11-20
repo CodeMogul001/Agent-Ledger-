@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import {
   buildDashboardSummary,
   buildPromptPreview,
@@ -22,7 +22,21 @@ import {
   updateSettings,
 } from './server/store.ts';
 
-const PORT = Number(process.env.PORT || 3000);
+function resolvePort(): number {
+  const portArgIdx = process.argv.indexOf('--port');
+  if (portArgIdx !== -1 && process.argv[portArgIdx + 1]) {
+    const parsed = Number(process.argv[portArgIdx + 1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  const envPort = process.env.PORT ? Number(process.env.PORT) : NaN;
+  const nginxPort = process.env.NGINX_PORT ? Number(process.env.NGINX_PORT) : NaN;
+  if (Number.isFinite(envPort) && envPort > 0 && envPort !== nginxPort) {
+    return envPort;
+  }
+  return Number(process.env.DEFAULT_APP_PORT || 3000);
+}
+
+const PORT = resolvePort();
 const isProduction = process.env.NODE_ENV === 'production';
 
 function firstHeader(req: Request, names: string[]): string {
@@ -79,7 +93,12 @@ function resolveUpstreamTarget(
 
   if (!authHeader) {
     const isGeminiModel = model.toLowerCase().startsWith('gemini');
-    if ((isGeminiModel || !openAiKey) && geminiKey && geminiKey !== 'MY_GEMINI_API_KEY') {
+    const isGoogleUpstream = baseUrl.includes('generativelanguage.googleapis.com');
+    if (
+      (isGeminiModel || isGoogleUpstream) &&
+      geminiKey &&
+      geminiKey !== 'MY_GEMINI_API_KEY'
+    ) {
       authHeader = `Bearer ${geminiKey}`;
       if (!customUpstream && (!envUpstream || envUpstream === 'https://api.openai.com/v1')) {
         baseUrl = 'https://generativelanguage.googleapis.com/v1beta/openai';
@@ -361,6 +380,18 @@ async function handleProxyRequest(
 async function startServer(): Promise<void> {
   const app = express();
   app.use(express.json({ limit: '4mb' }));
+  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+    if (err instanceof SyntaxError && 'body' in err) {
+      res.status(400).json({
+        error: {
+          message: 'Invalid JSON request body.',
+          type: 'invalid_request_error',
+        },
+      });
+      return;
+    }
+    next(err);
+  });
 
   // OpenAI-compatible proxy routes
   app.post('/v1/chat/completions', (req, res) => {
