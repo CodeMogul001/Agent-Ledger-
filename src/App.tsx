@@ -6,6 +6,13 @@ import { ProxySetupView } from './components/ProxySetupView';
 import { Sidebar, type ActiveNav } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { WasteSection } from './components/WasteSection';
+import {
+  clearDemoLogs,
+  fetchDashboardSummary,
+  injectSampleAgentRun,
+  updateLogTags,
+  updateTrackerSettings,
+} from './lib/apiClient';
 import type { DashboardSummary } from './types';
 
 export default function App() {
@@ -22,13 +29,7 @@ export default function App() {
   const fetchDashboard = useCallback(async (session: string) => {
     try {
       setErrorMsg(null);
-      const query =
-        session && session !== 'all' ? `?session=${encodeURIComponent(session)}` : '';
-      const res = await fetch(`/api/dashboard${query}`);
-      if (!res.ok) {
-        throw new Error(`Dashboard API returned HTTP ${res.status}`);
-      }
-      const data = (await res.json()) as DashboardSummary;
+      const data = await fetchDashboardSummary(session);
       setSummary(data);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to load dashboard data');
@@ -44,14 +45,12 @@ export default function App() {
   const handleInjectDemo = async () => {
     setIsBusy(true);
     try {
-      const res = await fetch('/api/demo/seed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: summary && summary.totalCalls > 0 ? 'append' : 'replace' }),
-      });
-      if (!res.ok) throw new Error('Failed to inject sample agent run');
+      setErrorMsg(null);
+      const next = await injectSampleAgentRun(
+        summary && summary.totalCalls > 0 ? 'append' : 'replace',
+      );
       setSessionFilter('all');
-      await fetchDashboard('all');
+      setSummary(next);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to inject sample run');
     } finally {
@@ -62,10 +61,10 @@ export default function App() {
   const handleClearLogs = async () => {
     setIsBusy(true);
     try {
-      const res = await fetch('/api/demo/clear', { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to clear logs');
+      setErrorMsg(null);
+      const next = await clearDemoLogs();
       setSessionFilter('all');
-      await fetchDashboard('all');
+      setSummary(next);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to clear logs');
     } finally {
@@ -77,12 +76,7 @@ export default function App() {
     manualTaskCount?: number | null;
     manualSessionCount?: number | null;
   }) => {
-    const res = await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-    if (!res.ok) throw new Error('Failed to update settings');
+    await updateTrackerSettings(updates);
     await fetchDashboard(sessionFilter);
   };
 
@@ -90,12 +84,7 @@ export default function App() {
     id: string,
     updates: { sessionLabel: string; taskLabel: string },
   ) => {
-    const res = await fetch(`/api/logs/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-    if (!res.ok) throw new Error('Failed to update log tags');
+    await updateLogTags(id, updates);
     await fetchDashboard(sessionFilter);
   };
 

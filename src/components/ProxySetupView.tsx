@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Check, Copy, Play } from 'lucide-react';
+import { sendProxyTestCall } from '../lib/apiClient';
 import type { ModelPricing } from '../types';
 
 interface ProxySetupViewProps {
@@ -88,33 +89,15 @@ res = client.chat.completions.create(
     setRunningTest(true);
     setTestResult(null);
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'x-agent-session': sessionLabel.trim() || 'unassigned',
-        'x-agent-task': taskLabel.trim() || 'unassigned',
-      };
-      if (simulateUpstream) {
-        headers['x-proxy-simulate'] = 'true';
-      } else if (apiKey.trim()) {
-        headers.Authorization = `Bearer ${apiKey.trim()}`;
-      }
-
-      const res = await fetch('/v1/chat/completions', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model,
-          messages: [{ role: 'user', content: prompt }],
-        }),
+      const result = await sendProxyTestCall({
+        model,
+        prompt,
+        sessionLabel,
+        taskLabel,
+        simulateUpstream,
+        apiKey,
       });
-      const text = await res.text();
-      let formatted = text;
-      try {
-        formatted = JSON.stringify(JSON.parse(text), null, 2);
-      } catch {
-        // Keep raw text
-      }
-      setTestResult({ status: res.status, body: formatted });
+      setTestResult(result);
       await onTestCompleted();
     } catch (err) {
       setTestResult({
